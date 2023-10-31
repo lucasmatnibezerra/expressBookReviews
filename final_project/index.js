@@ -1,81 +1,67 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-let books = require("./booksdb.js");
-const regd_users = express.Router();
-
-let users = [{"username":"matni","password":"matni"}];
-
-const isValid = (username)=>{ //returns boolean
-//write code to check is the username is valid
-    const userMatches = users.filter((user) => user.username === username);
-    return userMatches.length > 0;
-}
-
-const authenticatedUser = (username,password)=>{ //returns boolean
-//write code to check if username and password match the one we have in records.
-  const matchingUsers = users.filter((user) => user.username === username && user.password === password);
-  return matchingUsers.length > 0;
-}
+const session = require('express-session')
+const customer_routes = require('./router/auth_users.js').authenticated;
+const genl_routes = require('./router/general.js').general;
 
 
-
-//only registered users can login
-regd_users.post("/login", (req,res) => {
-  //Write your code here
-  console.log("login: ", req.body);
-  const username = req.body.username;
-  const password = req.body.password;
-
-  if (!username || !password) {
-    return res.status(404).json({message: "Error logging in"});
+let users = []
+//Function to check if the user exists
+const doesExist = (username)=>{
+  let userswithsamename = users.filter((user)=>{
+    return user.username === username
+  });
+  if(userswithsamename.length > 0){
+    return true;
+  } else {
+    return false;
   }
+}
+//Function to check if the user is authenticated
+const authenticatedUser = (username,password)=>{
+  let validusers = users.filter((user)=>{
+    return (user.username === username && user.password === password)
+  });
+  if(validusers.length > 0){
+    return true;
+  } else {
+    return false;
+  }
+}
 
-  if (authenticatedUser(username,password)) {
-    let accessToken = jwt.sign({
-      data: password
-    }, 'access', { expiresIn: 60 * 60 });
 
-    req.session.authorization = {
-            accessToken,username
+
+
+const app = express();
+
+app.use(express.json());
+
+app.use("/customer",session({secret:"fingerprint_customer",resave: true, saveUninitialized: true}))
+
+app.use("/customer/auth/*", function auth(req,res,next){
+//Write the authenication mechanism here
+if(req.session.authorization) { //get the authorization object stored in the session
+    token = req.session.authorization['accessToken']; //retrieve the token from authorization object
+    jwt.verify(token, "access",(err,user)=>{ //Use JWT to verify token
+        if(!err){
+            req.user = user;
+            next();
         }
-        return res.status(200).send("User successfully logged in");
-    } else {
-        return res.status(208).json({message: "Invalid Login. Check username and password"});
-    }
-});
-
-// Add a book review
-regd_users.put("/auth/review/:isbn", (req, res) => {
-  //Write your code here
-    const isbn = req.params.isbn;
-    const review = req.body.review;
-    const username = req.session.authorization.username;
-    console.log("add review: ", req.params, req.body, req.session);
-    if (books[isbn]) {
-        let book = books[isbn];
-        book.reviews[username] = review;
-        return res.status(200).send("Review successfully posted");
-    }
-    else {
-        return res.status(404).json({message: `ISBN ${isbn} not found`});
-    }
-});
-
-regd_users.delete("/auth/review/:isbn", (req, res) => {
-  const isbn = req.params.isbn;
-  const username = req.session.authorization.username;
-  if (books[isbn]) {
-      let book = books[isbn];
-      delete book.reviews[username];
-      return res.status(200).send("Review successfully deleted");
-  }
-  else {
-      return res.status(404).json({message: `ISBN ${isbn} not found`});
-  }
+        else{
+            return res.status(403).json({message: "User not authenticated"})
+        }
+     });
+ } else {
+     return res.status(403).json({message: "User not logged in"})
+ }
 });
 
 
 
-module.exports.authenticated = regd_users;
-module.exports.isValid = isValid;
-module.exports.users = users;
+ 
+const PORT =5000;
+
+app.use("/customer", customer_routes);
+app.use("/", genl_routes);
+
+app.listen(PORT,()=>console.log("Server is running"));
